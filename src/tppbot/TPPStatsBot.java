@@ -49,7 +49,7 @@ enum State {
  */
 public class TPPStatsBot extends PircBot {
 
-    private static String SB_VERSION = "1.2.5";
+    private static String SB_VERSION = "1.2.6";
     /**
      * Sets the DEBUG flag on or off.
      */
