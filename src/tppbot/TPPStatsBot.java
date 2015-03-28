@@ -49,7 +49,7 @@ enum State {
  */
 public class TPPStatsBot extends PircBot {
 
-    private static String SB_VERSION = "1.2.6";
+    private static String SB_VERSION = "1.2.7";
     /**
      * Sets the DEBUG flag on or off.
      */
@@ -334,7 +334,7 @@ public class TPPStatsBot extends PircBot {
             }
         }
         if (!sender.equalsIgnoreCase("tppinfobot") && !sender.equalsIgnoreCase("tppbankbot")) {
-            if (!message.toLowerCase().startsWith("!move") && !message.toLowerCase().startsWith("!bet") && !message.toLowerCase().startsWith("!balance")) {
+            if (!message.toLowerCase().startsWith("!move") && !message.toLowerCase().startsWith("!bet") && !message.toLowerCase().startsWith("!balance") && !message.toLowerCase().startsWith("!a") && !message.toLowerCase().startsWith("!b") && !message.toLowerCase().startsWith("!c") && !message.toLowerCase().startsWith("!d") && !message.toLowerCase().startsWith("!-")) {
                 if (!message.toLowerCase().contains(BOT_NAME.toLowerCase())) {
                     g.appendChat("[CHAT] " + sender + ": " + message);
                 }
@@ -520,6 +520,15 @@ public class TPPStatsBot extends PircBot {
                     } else {
                         moves.put(sender, move);
                     }
+                }
+            }
+            if (message.toLowerCase().startsWith("!a") || message.toLowerCase().startsWith("!b") || message.toLowerCase().startsWith("!c") || message.toLowerCase().startsWith("!d") || message.toLowerCase().startsWith("!-")) {
+                String move = "" + message.charAt(1); //I'm too lazy to convert char to string the real way.
+                move = move.toUpperCase();
+                if (moves.containsKey(sender)) {
+                    moves.replace(sender, move);
+                } else {
+                    moves.put(sender, move);
                 }
             }
         }
