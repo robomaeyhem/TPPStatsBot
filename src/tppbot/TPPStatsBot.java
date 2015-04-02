@@ -49,19 +49,18 @@ enum State {
  */
 public class TPPStatsBot extends PircBot {
 
-    private static String SB_VERSION = "1.2.7";
+    private static String SB_VERSION = "1.3";
     /**
      * Sets the DEBUG flag on or off.
      */
     public boolean DEBUG = false;
     private String path = "";
     private static String BOT_NAME = "";
-    private int balance;
     private HashMap<String, Integer> redTeam;
     private HashMap<String, Integer> blueTeam;
     private HashMap<String, String> names;
-    private HashMap<String, Integer> masterList;
     private HashMap<String, String> moves;
+    private HashMap<String,Integer> cacheList;
     private int avgRed;
     private int avgBlue;
     private int totalRed;
@@ -71,7 +70,6 @@ public class TPPStatsBot extends PircBot {
     private long timeAfter;
     private long longestMatch, shortestMatch, longestStart, shortestStart;
     private File logFile;
-    private int highestBalance;
     private static boolean canExit = true;
 
     /**
@@ -108,7 +106,6 @@ public class TPPStatsBot extends PircBot {
         this.setName(BOT_NAME);
         LAST_MESSAGE_TIME = 0;
         channel = "";
-        balance = 0;
         avgRed = 0;
         avgBlue = 0;
         totalRed = 0;
@@ -124,41 +121,11 @@ public class TPPStatsBot extends PircBot {
         hasBet = false;
         betTeam = "";
         betAmt = 0;
+        cacheList = new HashMap<>();
         redTeam = new HashMap<>();
         blueTeam = new HashMap<>();
         names = new HashMap<>();
         moves = new HashMap<>();
-        try (FileInputStream fileIn = new FileInputStream(path + "personList.dat"); ObjectInputStream in = new ObjectInputStream(fileIn)) {
-            masterList = (HashMap<String, Integer>) in.readObject();
-        } catch (Exception ex) {
-            int exit = JOptionPane.showConfirmDialog(null, "Failed to read the Master Balance List! The list is likely corrupt.\nThis list is critical and Stats Bot cannot run without it.\nWould you like to attempt to use the backup list?", "Fatal Error", JOptionPane.YES_NO_OPTION, JOptionPane.ERROR_MESSAGE);
-            if (exit == JOptionPane.NO_OPTION) {
-                System.exit(4);
-            }
-            try {
-                File backup = new File(path + "personList.dat");
-                if (backup.exists()) {
-                    backup.delete();
-                }
-                backup = new File(path + "personList_Backup.dat");
-                backup.renameTo(new File(path + "personList.dat"));
-                backup = new File(path + "personList.dat");
-                boolean backupSuccess = makeMasterListBackup();
-                if (!backupSuccess) {
-                    throw new Exception("Failed to make the master list backup!");
-                }
-            } catch (Exception ex1) {
-                ex1.printStackTrace();
-                System.err.println("[WARNING] Failed to make a backup of the master list and/or copy the backup to the new one!! " + ex1);
-                JOptionPane.showMessageDialog(null, "Failed to make a backup of the master list and/or copy the backup list the default list!\n" + ex1, "Fatal Error", JOptionPane.ERROR_MESSAGE);
-                System.exit(5);
-            }
-            try (FileInputStream fileIn = new FileInputStream(path + "personList.dat"); ObjectInputStream in = new ObjectInputStream(fileIn)) {
-                masterList = (HashMap<String, Integer>) in.readObject();
-            } catch (Exception ex1) {
-                JOptionPane.showMessageDialog(null, "Failed to read the backup master list!!\n" + ex1, "Fatal Error", JOptionPane.ERROR_MESSAGE);
-            }
-        }
         try (FileInputStream fileIn = new FileInputStream(path + "tppRecords.dat"); ObjectInputStream in = new ObjectInputStream(fileIn)) {
             longestMatch = (long) in.readObject();
             longestRed = (String) in.readObject();
@@ -169,11 +136,10 @@ public class TPPStatsBot extends PircBot {
             shortestBlue = (String) in.readObject();
             shortestStart = (long) in.readObject();
         } catch (Exception ex) {
-            System.err.println("[WARNING] Failed to read the master person list!! " + ex);
+            System.err.println("[WARNING] Failed to read the records list!! " + ex);
         }
         STATE = State.UNKNOWN;
         logFile = new File(path + "tpplog.txt");
-        highestBalance = getHighestBalance();
         appendLog("[INFO] Bot Started.");
         this.setMessageDelay(5500);
         g = new GUI(this);
@@ -210,24 +176,6 @@ public class TPPStatsBot extends PircBot {
     }
 
     /**
-     * Updates the master balance list by saving whats in memory to the disk.
-     *
-     * @return True if successful, false if not
-     */
-    public final boolean updateMasterList() {
-        canExit = false;
-        try (FileOutputStream fileOut = new FileOutputStream(path + "personList.dat"); ObjectOutputStream out = new ObjectOutputStream(fileOut)) {
-            out.writeObject(masterList);
-            canExit = true;
-            return true;
-        } catch (IOException ex) {
-            System.err.println("[WARNING] Failed to save the master person list!! " + ex);
-        }
-        canExit = true;
-        return false;
-    }
-
-    /**
      * Updates the records list by saving whats in memory to the disk.
      *
      * @return True if successful, false if not
@@ -253,27 +201,6 @@ public class TPPStatsBot extends PircBot {
     }
 
     /**
-     * Makes a backup copy of the master balance list and saves it to the disk.
-     *
-     * @return True if successful, false if not
-     */
-    public final boolean makeMasterListBackup() {
-        canExit = false;
-        File masterFile = new File(path + "personList.dat");
-        File masterBackup = new File(path + "personList_Backup.dat");
-        try {
-            FileUtils.copyFile(masterFile, masterBackup);
-            canExit = true;
-            return true;
-        } catch (Exception ex) {
-            System.err.println("[WARNING] Failed to make a backup of the master list!! " + ex);
-            appendLog("[WARNING] Failed to make a backup of the master list!! \n" + getStackTrace(ex));
-            canExit = true;
-            return false;
-        }
-    }
-
-    /**
      * Appends the log file with the specified text
      *
      * @param text Text to append the log with
@@ -284,24 +211,6 @@ public class TPPStatsBot extends PircBot {
         } catch (IOException ex) {
             System.out.println("[ERROR] Failed to write to the log! " + ex);
         }
-    }
-
-    /**
-     * Gets the balance
-     *
-     * @return Balance
-     */
-    public int getBalance() {
-        return balance;
-    }
-
-    /**
-     * Sets the balance
-     *
-     * @param balance Balance to set to
-     */
-    public void setBalance(int balance) {
-        this.balance = balance;
     }
 
     @Override
@@ -362,7 +271,6 @@ public class TPPStatsBot extends PircBot {
                     g.appendChat("[MATCH] This last match ended in a No-Contest!!");
                     appendLog("[MATCH] This last match ended in a No-Contest!!\r\n---------------------------------------------------------------------------");
                 }
-                updateMasterList();
                 STATE = State.PRE_BATTLE;
                 g.resetBetPanel();
                 g.resetTeams();
@@ -380,14 +288,7 @@ public class TPPStatsBot extends PircBot {
                 bluePokemon = "";
                 names = new HashMap<>();
                 moves = new HashMap<>();
-                HashMap<String, Integer> oldList = new HashMap<>(masterList);
-                try (FileInputStream fileIn = new FileInputStream("D:\\a\\TPPStatsBot\\personList.dat"); ObjectInputStream in = new ObjectInputStream(fileIn)) {
-                    masterList = (HashMap<String, Integer>) in.readObject();
-                } catch (Exception ex) {
-                    System.err.println("[WARNING] Failed to read the master person list!! " + ex);
-                    appendLog("[WARNING] Failed to reload the master person list!! \n" + getStackTrace(ex));
-                    masterList = new HashMap<>(oldList);
-                }
+                cacheList = new HashMap<>();
                 System.gc();
                 g.appendChat("[MATCH] New match beginning, analyzing bets...");
                 appendLog("[MATCH] New Match Beginning.");
@@ -407,9 +308,6 @@ public class TPPStatsBot extends PircBot {
                     return;
                 }
                 String teamWin = message.split("Team ")[1].split(" ", 2)[0].toLowerCase();
-                makeMasterListBackup();
-                doWinners(teamWin);
-                updateMasterList();
                 g.appendChat("[RESULT] Match End, " + teamWin + " won!");
                 g.updateWinningTeam(teamWin, false);
                 if (timeBefore != 0 && timeAfter != 0 && timeDiff > 0) {
@@ -491,16 +389,12 @@ public class TPPStatsBot extends PircBot {
                 String person = message.split("@", 2)[1].split(" ", 2)[0];
                 person = TPPStatsBotMain.capitalize(person);
                 int pBalance = Integer.parseInt(message.split(" your balance is ")[1].replace(",", ""));
-                boolean found = masterList.get(person) != null;
+                boolean found = cacheList.get(person) != null;
                 if (!found) {
-                    masterList.put(person, pBalance);
-                    //g.appendChat("[DEBUG] Adding " + person + " to the master list with a balance of $" + pBalance);
+                    cacheList.put(person, pBalance);
                 } else {
-                    //g.appendChat("[DEBUG] Updating " + person + " in the master list from $" + masterList.get(person) + " to $" + pBalance);
-                    masterList.replace(person, pBalance);
+                    cacheList.replace(person, pBalance);
                 }
-                updateMasterList();
-                highestBalance = getHighestBalance();
             }
         }
         if ((!sender.equalsIgnoreCase("tppinfobot") && !sender.equalsIgnoreCase("tppbankbot") && !sender.equalsIgnoreCase("tppmodbot")) && (STATE == State.UNKNOWN || STATE == State.PRE_BATTLE || STATE == State.TEN_SEC_LEFT || STATE == State.IN_BATTLE)) {
@@ -561,22 +455,21 @@ public class TPPStatsBot extends PircBot {
                         team = "blue";
                     }
                 }
-                if (personAmt > highestBalance || personAmt <= 0) {
-                    System.err.println("[DENIAL] Disallowing bet by " + sender + " for $" + personAmt + "!");
-                    appendLog("[DENIAL] Disallowing bet by " + sender + " for $" + personAmt + "!");
-                    return;
-                }
                 if (!team.equals("red") && !team.equals("blue")) {
                     System.err.println("[DENIAL] Disallowing bet by " + sender + " for $" + personAmt + " on " + team + " team!");
                     appendLog("[DENIAL] Disallowing bet by " + sender + " for $" + personAmt + " on " + team + " team!");
                     return;
                 }
                 boolean hasBet = names.get(sender) != null;
-                Integer betterAmt = masterList.get(sender);
-                if (betterAmt == null) {
-                    masterList.put(sender, 1000);
+                int betterAmt = TPPStatsBot.getBalance(sender);
+                if (betterAmt == -1) {
+                    betterAmt = 1000; //Give them $1000 incase we can't find their balance.
                 }
-                betterAmt = masterList.get(sender);
+                if(cacheList.containsKey(sender)){
+                    cacheList.replace(sender, betterAmt);
+                }else{
+                    cacheList.put(sender, betterAmt);
+                }
                 if (hasBet) {
                     String betterTeam = names.get(sender);
                     if (betterTeam.equalsIgnoreCase("red")) {
@@ -629,21 +522,6 @@ public class TPPStatsBot extends PircBot {
                 getTotals();
             }
         }
-    }
-
-    /**
-     * Gets the highest balance from the master balance list
-     *
-     * @return Highest Balance
-     */
-    public final int getHighestBalance() {
-        int toReturn = 0;
-        for (int el : masterList.values()) {
-            if (el > toReturn) {
-                toReturn = el;
-            }
-        }
-        return toReturn;
     }
 
     /**
@@ -705,83 +583,6 @@ public class TPPStatsBot extends PircBot {
             frame.setJMenuBar(menu);
             JMenu file = new JMenu("File");
             JMenu edit = new JMenu("Records");
-            JMenuItem masterListGet = new JMenuItem("Download latest Master List...");
-            masterListGet.addActionListener((ActionEvent e) -> {
-                Thread t = new Thread(() -> {
-                    JOptionPane.showMessageDialog(null, "Your browser will open soon and will download a file.\nSave this file to the TPP Stats Bot Directory, and replace personList.dat\nIt is recommended that you make a backup of the current personList.dat.", "Master Record download", JOptionPane.WARNING_MESSAGE);
-                    String url = "http://www.michaelenfieldweather.com/tppstatsbot/personList.dat"; //yeah it's my own website so what big whoop wanna fight about it Kappa
-                    try {
-                        java.awt.Desktop.getDesktop().browse(java.net.URI.create(url));
-                        String path = new File("").getAbsolutePath();
-                        Runtime.getRuntime().exec("explorer.exe /select," + path);
-                    } catch (Exception ex) {
-                        JOptionPane.showInputDialog("Failed to open your web browser! Please copy-paste this into your browser: ", url);
-                    }
-                    JOptionPane.showMessageDialog(null, "Stats Bot will now exit. Please replace personList.dat with the new one.", "Information", JOptionPane.INFORMATION_MESSAGE);
-                    TPPStatsBot.safelyExit(0);
-                });
-                t.start();
-            });
-            edit.add(masterListGet);
-            JMenuItem masterListModify = new JMenuItem("Edit Name on Master List...");
-            masterListModify.addActionListener((ActionEvent e) -> {
-                JDialog d = new JDialog();
-                JLabel status = new JLabel("");
-                status.setHorizontalAlignment(JLabel.CENTER);
-                status.setVerticalAlignment(JLabel.CENTER);
-                d.setModal(false);
-                d.setTitle("Modify Balance");
-                d.setSize(300, 150);
-                d.setResizable(false);
-                JPanel mainP = new JPanel();
-                mainP.setLayout(new BorderLayout());
-                JPanel topP = new JPanel();
-                topP.setLayout(new GridLayout(2, 1));
-                JPanel top = new JPanel();
-                top.setLayout(new GridLayout(2, 2));
-                top.add(new JLabel("Name:"));
-                JTextField name = new JTextField();
-                JTextField balance = new JTextField();
-                top.add(name);
-                top.add(new JLabel("Set Balance: "));
-                top.add(balance);
-                topP.add(top);
-                topP.add(status);
-                mainP.add(topP, BorderLayout.CENTER);
-                JPanel bottom = new JPanel();
-                JButton modify = new JButton("Set");
-                JButton close = new JButton("Close");
-                close.addActionListener((ActionEvent e1) -> {
-                    d.dispose();
-                });
-                modify.addActionListener((ActionEvent e1) -> {
-                    if (masterList.get(name.getText()) == null) {
-                        status.setText("Failed! Name not found.");
-                    } else {
-                        try {
-                            masterList.replace(name.getText(), Integer.parseInt(balance.getText()));
-                            boolean update = updateMasterList();
-                            if (!update) {
-                                status.setText("Failed! Couldn't save the master list!");
-                            } else {
-                                status.setText("Completed!");
-                            }
-                        } catch (NumberFormatException ex) {
-                            status.setText("Failed! " + balance.getText() + " is not a valid number.");
-                        } catch (Exception ex) {
-                            status.setText("Failed! " + ex);
-                        }
-                    }
-                });
-                bottom.add(modify);
-                bottom.add(close);
-                mainP.add(bottom, BorderLayout.SOUTH);
-                d.add(mainP);
-                d.getRootPane().setDefaultButton(modify);
-                d.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-                d.setVisible(true);
-            });
-            edit.add(masterListModify);
             JMenuItem updateCheck = new JMenuItem("Check for Updates to Stats Bot...");
             updateCheck.addActionListener((ActionEvent e) -> {
                 Thread t = new Thread(() -> {
@@ -832,10 +633,10 @@ public class TPPStatsBot extends PircBot {
                 JButton close = new JButton("Close");
                 find.addActionListener((ActionEvent ea) -> {
                     String out = "";
-                    if (b.masterList.get(input.getText()) == null) {
+                    if (TPPStatsBot.getBalance(input.getText()) == -1) {
                         out = "Name not found";
                     } else {
-                        out = DOLLARS.format(b.masterList.get(input.getText()));
+                        out = DOLLARS.format(TPPStatsBot.getBalance(input.getText()));
                     }
                     output.setText(out);
                 });
@@ -1059,7 +860,7 @@ public class TPPStatsBot extends PircBot {
                     for (String el : sortedCopy.navigableKeySet()) {
                         data[index][0] = el;
                         data[index][1] = DOLLARS.format(redTeam.get(el));
-                        data[index][2] = DOLLARS.format(masterList.get(el));
+                        data[index][2] = DOLLARS.format(cacheList.get(el));
                         data[index][3] = b.moves.get(el);
                         index++;
                     }
@@ -1119,7 +920,7 @@ public class TPPStatsBot extends PircBot {
                     for (String el : sortedCopy.navigableKeySet()) {
                         data[index][0] = el;
                         data[index][1] = DOLLARS.format(blueTeam.get(el));
-                        data[index][2] = DOLLARS.format(masterList.get(el));
+                        data[index][2] = DOLLARS.format(cacheList.get(el));
                         data[index][3] = b.moves.get(el);
                         index++;
                     }
@@ -1400,63 +1201,6 @@ public class TPPStatsBot extends PircBot {
 //        }
     }
 
-    /**
-     * Calculates the team's wins and losses
-     *
-     * @param winningTeam Team which won the round
-     */
-    public void doWinners(String winningTeam) {
-        DecimalFormat df = new DecimalFormat("#");
-        df.setRoundingMode(RoundingMode.CEILING);
-        df.setGroupingUsed(false);
-        double redOdds = (double) totalBlue / (double) totalRed;
-        double blueOdds = (double) totalRed / (double) totalBlue;
-        if (!redTeam.isEmpty() && !blueTeam.isEmpty()) {
-            if (winningTeam.equalsIgnoreCase("red")) {
-                for (String el : redTeam.keySet()) {
-                    double winAmt = redTeam.get(el);
-                    winAmt = winAmt * redOdds;
-                    int oldBalance = masterList.get(el);
-                    oldBalance += (Integer.parseInt(df.format(winAmt)));
-                    masterList.replace(el, oldBalance);
-                }
-                for (String el : blueTeam.keySet()) {
-                    int lostAmt = blueTeam.get(el);
-                    int oldBalance = masterList.get(el);
-                    if (oldBalance - lostAmt < 100) {
-                        if (oldBalance < 500) {
-                            masterList.replace(el, 100);
-                        } else {
-                            masterList.replace(el, 500);
-                        }
-                    } else {
-                        masterList.replace(el, (oldBalance - lostAmt));
-                    }
-                }
-            } else if (winningTeam.equalsIgnoreCase("blue")) {
-                for (String el : blueTeam.keySet()) {
-                    double winAmt = blueTeam.get(el);
-                    winAmt = winAmt * blueOdds;
-                    int oldBalance = masterList.get(el);
-                    oldBalance += (Integer.parseInt(df.format(winAmt)));
-                    masterList.replace(el, oldBalance);
-                }
-                for (String el : redTeam.keySet()) {
-                    int lostAmt = redTeam.get(el);
-                    int oldBalance = masterList.get(el);
-                    if (oldBalance - lostAmt < 100) {
-                        if (oldBalance < 500) {
-                            masterList.replace(el, 100);
-                        } else {
-                            masterList.replace(el, 500);
-                        }
-                    } else {
-                        masterList.replace(el, (oldBalance - lostAmt));
-                    }
-                }
-            }
-        }
-    }
 
     /**
      * Processes the player bet and properly puts it into the system.
@@ -1479,7 +1223,7 @@ public class TPPStatsBot extends PircBot {
             } catch (Exception ex) {
                 return;
             }
-            if (bufBetAmt > 0 && bufBetAmt <= masterList.get(BOT_NAME)) {
+            if (bufBetAmt > 0 && bufBetAmt <= TPPStatsBot.getBalance(BOT_NAME)) {
                 hasBet = true;
                 betTeam = bufBetTeam;
                 betAmt = bufBetAmt;
@@ -1592,6 +1336,29 @@ public class TPPStatsBot extends PircBot {
             if (TPPStatsBot.canExit) {
                 System.exit(errorCode);
             }
+        }
+    }
+
+    /**
+     * Gets the balance of the user specified through TwitchPlaysLeaderboard's
+     * website.
+     *
+     * @param username User to lookup
+     * @return User's balance, -1 if there is an error
+     */
+    public static int getBalance(String username) {
+        try {
+            String response = getUrlSource("http://twitchplaysleaderboard.info/api/balance/" + username.toLowerCase());
+            String success = response.split("success\":")[1].split(",", 2)[0];
+            if (success.equalsIgnoreCase("true")) {
+                return Integer.parseInt(response.split("\"calculated\":\\{")[1].split("amount\"\\:")[1].split(",", 2)[0]);
+            } else {
+                return -1;
+            }
+        } catch (Exception ex) {
+            System.err.println("[WARNING] Failed to get the balance for " + username + "!");
+            ex.printStackTrace();
+            return -1;
         }
     }
 
