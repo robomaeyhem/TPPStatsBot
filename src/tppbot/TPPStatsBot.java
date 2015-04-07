@@ -34,7 +34,6 @@ import java.util.concurrent.TimeUnit;
 import javax.swing.*;
 import javax.swing.event.TableModelListener;
 import javax.swing.table.TableModel;
-import org.apache.commons.io.FileUtils;
 import org.jibble.pircbot.PircBot;
 
 enum State {
@@ -49,7 +48,7 @@ enum State {
  */
 public class TPPStatsBot extends PircBot {
 
-    private static String SB_VERSION = "1.3";
+    private static String SB_VERSION = "1.3.1";
     /**
      * Sets the DEBUG flag on or off.
      */
@@ -60,7 +59,7 @@ public class TPPStatsBot extends PircBot {
     private HashMap<String, Integer> blueTeam;
     private HashMap<String, String> names;
     private HashMap<String, String> moves;
-    private HashMap<String,Integer> cacheList;
+    private HashMap<String, Integer> cacheList;
     private int avgRed;
     private int avgBlue;
     private int totalRed;
@@ -460,14 +459,19 @@ public class TPPStatsBot extends PircBot {
                     appendLog("[DENIAL] Disallowing bet by " + sender + " for $" + personAmt + " on " + team + " team!");
                     return;
                 }
+                if(personAmt <= 0){
+                    System.err.println("[DENIAL] Denying bet by "+sender+" for $"+personAmt+"!");
+                    appendLog("[DENIAL] Denying bet by "+sender+" for $"+personAmt+"!");
+                    return;
+                }
                 boolean hasBet = names.get(sender) != null;
                 int betterAmt = TPPStatsBot.getBalance(sender);
                 if (betterAmt == -1) {
                     betterAmt = 1000; //Give them $1000 incase we can't find their balance.
                 }
-                if(cacheList.containsKey(sender)){
+                if (cacheList.containsKey(sender)) {
                     cacheList.replace(sender, betterAmt);
-                }else{
+                } else {
                     cacheList.put(sender, betterAmt);
                 }
                 if (hasBet) {
@@ -1201,7 +1205,6 @@ public class TPPStatsBot extends PircBot {
 //        }
     }
 
-
     /**
      * Processes the player bet and properly puts it into the system.
      *
@@ -1227,6 +1230,7 @@ public class TPPStatsBot extends PircBot {
                 hasBet = true;
                 betTeam = bufBetTeam;
                 betAmt = bufBetAmt;
+                cacheList.put(BOT_NAME,TPPStatsBot.getBalance(BOT_NAME));
                 names.put(BOT_NAME, betTeam.toLowerCase());
                 moves.put(BOT_NAME, "-");
                 switch (betTeam.toLowerCase()) {
